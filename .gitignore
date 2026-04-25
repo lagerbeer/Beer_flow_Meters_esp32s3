@@ -1,0 +1,26 @@
+# PlatformIO build artifacts
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Credentials — never commit real secrets
+src/credentials.h
+
+# VS Code
+.vscode/
+
+# Backup / scratch folders
+backup/
+New folder/
+*.bkk
+*.kck
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Claude Code local memory
+.claude/

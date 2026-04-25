@@ -1,0 +1,1266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Kegerator Control</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+/* ================================================================
+   Design direction: Industrial bar tap — dark metal, warm amber,
+   bold condensed type, deliberate grain and glow.
+================================================================ */
+
+:root {
+  --amber:   #F5A623;
+  --amber2:  #E8920A;
+  --amber-glow: rgba(245,166,35,.18);
+  --bg:      #0D0D0D;
+  --surface: #161616;
+  --panel:   #1E1E1E;
+  --panel2:  #262626;
+  --border:  #2E2E2E;
+  --text:    #F0EDE8;
+  --muted:   #7A756D;
+  --green:   #22C55E;
+  --yellow:  #EAB308;
+  --red:     #EF4444;
+  --blue:    #3B82F6;
+  --purple:  #A855F7;
+  --r:       10px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { height: 100%; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  /* subtle grain overlay */
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+}
+
+/* ---- Typography ---- */
+.display { font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.03em; }
+.mono { font-family: 'DM Mono', monospace; }
+
+/* ---- Layout ---- */
+.app { display: flex; min-height: 100vh; }
+
+/* ---- Sidebar ---- */
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.logo {
+  padding: 28px 20px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.logo-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.6rem;
+  color: var(--amber);
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+.logo-sub {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.nav-section { padding: 16px 12px 8px; }
+.nav-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--muted);
+  padding: 0 8px;
+  margin-bottom: 4px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--muted);
+  transition: all .15s;
+  user-select: none;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+}
+.nav-item:hover { background: var(--panel); color: var(--text); }
+.nav-item.active { background: var(--amber-glow); color: var(--amber); }
+.nav-icon { font-size: 1rem; width: 20px; text-align: center; }
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 16px;
+  border-top: 1px solid var(--border);
+}
+.status-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  margin-right: 6px;
+  animation: blink 2s ease-in-out infinite;
+}
+.status-dot.green { background: var(--green); }
+.status-dot.red   { background: var(--red); animation: none; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+.status-line { font-size: 0.78rem; color: var(--muted); display: flex; align-items: center; margin-bottom: 6px; }
+
+/* ---- Main content ---- */
+.main {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 28px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 10;
+}
+.page-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.8rem;
+  color: var(--amber);
+  letter-spacing: 0.04em;
+}
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+.pill {
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.pill-green  { background: rgba(34,197,94,.15);  color: var(--green);  border: 1px solid rgba(34,197,94,.3); }
+.pill-red    { background: rgba(239,68,68,.15);   color: var(--red);    border: 1px solid rgba(239,68,68,.3); }
+.pill-amber  { background: var(--amber-glow);     color: var(--amber);  border: 1px solid rgba(245,166,35,.3); }
+.pill-muted  { background: var(--panel);          color: var(--muted);  border: 1px solid var(--border); }
+
+.content { padding: 24px 28px; flex: 1; }
+
+/* ---- Alert banner ---- */
+.alert-banner {
+  display: none;
+  background: rgba(239,68,68,.12);
+  border: 1px solid rgba(239,68,68,.4);
+  border-radius: var(--r);
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.alert-banner.show { display: flex; }
+.alert-banner span { font-size: 0.9rem; color: #fca5a5; }
+.alert-dismiss { background: rgba(239,68,68,.2); border: 1px solid rgba(239,68,68,.4); color: #fca5a5; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 600; }
+
+/* ---- Section page ---- */
+.page { display: none; }
+.page.active { display: block; }
+
+/* ---- Tap grid ---- */
+.tap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+
+.tap-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  transition: border-color .2s, box-shadow .2s;
+  position: relative;
+}
+.tap-card:hover { border-color: #3d3d3d; box-shadow: 0 4px 24px rgba(0,0,0,.4); }
+.tap-card.pouring {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 1px var(--amber), 0 0 24px var(--amber-glow);
+}
+.tap-card.low { border-color: var(--red); }
+
+/* Tap card accent bar */
+.tap-accent { height: 3px; background: var(--border); }
+.tap-card.pouring .tap-accent { background: var(--amber); }
+.tap-card.low .tap-accent { background: var(--red); }
+
+.tap-body { padding: 18px; }
+.tap-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.tap-name-block {}
+.tap-number { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--muted); }
+.tap-name { font-family: 'Bebas Neue', sans-serif; font-size: 1.4rem; color: var(--amber); letter-spacing: 0.04em; line-height: 1; margin-top: 2px; }
+.tap-badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-start; }
+.badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.badge-pour { background: rgba(245,166,35,.2); color: var(--amber); border: 1px solid rgba(245,166,35,.4); }
+.badge-low  { background: rgba(239,68,68,.2);  color: var(--red);   border: 1px solid rgba(239,68,68,.4); }
+.badge-cal  { background: rgba(234,179,8,.2);  color: var(--yellow);border: 1px solid rgba(234,179,8,.4); }
+.badge-good { background: rgba(34,197,94,.15); color: var(--green); border: 1px solid rgba(34,197,94,.3); }
+
+/* Beer name input */
+.beer-row { display: flex; gap: 8px; margin-bottom: 16px; }
+.beer-row input {
+  flex: 1;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.88rem;
+  font-family: 'DM Sans', sans-serif;
+  transition: border-color .2s;
+}
+.beer-row input:focus { outline: none; border-color: var(--amber); }
+.beer-row input::placeholder { color: var(--muted); }
+
+/* Keg bar */
+.keg-section { margin-bottom: 16px; }
+.keg-meta { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.keg-meta-left { font-size: 0.78rem; color: var(--muted); }
+.keg-pct { font-family: 'Bebas Neue', sans-serif; font-size: 1.1rem; color: var(--text); }
+.keg-oz  { font-size: 0.78rem; color: var(--muted); }
+
+.keg-track { height: 10px; background: var(--panel2); border-radius: 5px; overflow: hidden; }
+.keg-fill  { height: 100%; border-radius: 5px; transition: width .5s ease; }
+.keg-fill.ok   { background: linear-gradient(90deg, #15803d, #22c55e); }
+.keg-fill.warn { background: linear-gradient(90deg, #a16207, #eab308); }
+.keg-fill.crit { background: linear-gradient(90deg, #991b1b, #ef4444); }
+
+/* Live pour indicator */
+.pour-live {
+  background: linear-gradient(135deg, rgba(245,166,35,.1), rgba(245,166,35,.05));
+  border: 1px solid rgba(245,166,35,.3);
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.pour-live-icon { font-size: 1.3rem; animation: tilt 0.8s ease-in-out infinite alternate; }
+@keyframes tilt { from { transform: rotate(-5deg); } to { transform: rotate(5deg); } }
+.pour-live-amount { font-family: 'Bebas Neue', sans-serif; font-size: 1.6rem; color: var(--amber); }
+.pour-live-label  { font-size: 0.75rem; color: var(--muted); }
+
+/* Mini stats */
+.stats-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.stat { background: var(--panel2); border-radius: 6px; padding: 10px 12px; }
+.stat-val { font-family: 'DM Mono', monospace; font-size: 1.05rem; font-weight: 500; color: var(--text); }
+.stat-lbl { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+
+/* Last pour */
+.last-pour {
+  background: var(--panel2);
+  border-left: 2px solid var(--amber);
+  border-radius: 0 6px 6px 0;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+.last-pour-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--amber); margin-bottom: 8px; }
+.last-pour-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.lp-item { }
+.lp-lbl { font-size: 0.68rem; color: var(--muted); }
+.lp-val { font-family: 'DM Mono', monospace; font-size: 0.9rem; color: var(--text); }
+.lp-time { font-size: 0.7rem; color: var(--muted); margin-top: 8px; }
+
+/* Card buttons */
+.btn-row { display: flex; gap: 8px; }
+.btn {
+  flex: 1;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-family: 'DM Sans', sans-serif;
+  transition: opacity .15s, transform .1s;
+}
+.btn:hover  { opacity: .85; }
+.btn:active { transform: scale(.97); }
+.btn-amber  { background: var(--amber);  color: #000; }
+.btn-red    { background: rgba(239,68,68,.2); color: var(--red); border: 1px solid rgba(239,68,68,.4); }
+.btn-ghost  { background: var(--panel2); color: var(--muted); border: 1px solid var(--border); }
+.btn-green  { background: rgba(34,197,94,.2); color: var(--green); border: 1px solid rgba(34,197,94,.3); }
+.btn-blue   { background: rgba(59,130,246,.2); color: var(--blue); border: 1px solid rgba(59,130,246,.3); }
+
+/* ---- KPI strip ---- */
+.kpi-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin-bottom: 24px; }
+.kpi {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 18px;
+}
+.kpi-val { font-family: 'Bebas Neue', sans-serif; font-size: 2.2rem; color: var(--amber); line-height: 1; }
+.kpi-lbl { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-top: 4px; }
+
+/* ---- Chart containers ---- */
+.chart-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.chart-card h3 {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 16px;
+  text-transform: uppercase;
+}
+canvas { max-height: 280px; }
+
+/* ---- History table ---- */
+.table-controls { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; }
+.select-styled {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 0.85rem;
+  font-family: 'DM Sans', sans-serif;
+  flex: 1;
+}
+.table-wrap { border-radius: var(--r); overflow: hidden; border: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; background: var(--panel); }
+thead th {
+  background: var(--panel2);
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 11px 16px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+tbody td { padding: 12px 16px; font-size: 0.88rem; border-bottom: 1px solid var(--border); }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: var(--panel2); }
+.td-mono { font-family: 'DM Mono', monospace; font-size: 0.85rem; }
+
+/* ---- Diagnostics page ---- */
+.diag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.diag-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 18px;
+}
+.diag-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.diag-name { font-family: 'Bebas Neue', sans-serif; font-size: 1.1rem; color: var(--amber); letter-spacing: 0.04em; }
+.health-badge { padding: 4px 10px; border-radius: 4px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; }
+.health-good   { background: rgba(34,197,94,.15); color: var(--green); }
+.health-warn   { background: rgba(234,179,8,.15);  color: var(--yellow); }
+.health-error  { background: rgba(239,68,68,.15);  color: var(--red); }
+
+.quality-bar-wrap { margin-bottom: 14px; }
+.quality-label { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--muted); margin-bottom: 6px; }
+.quality-track { height: 6px; background: var(--panel2); border-radius: 3px; overflow: hidden; }
+.quality-fill  { height: 100%; border-radius: 3px; transition: width .4s; }
+
+.diag-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.diag-stat { }
+.diag-stat-lbl { font-size: 0.68rem; color: var(--muted); }
+.diag-stat-val { font-family: 'DM Mono', monospace; font-size: 0.9rem; color: var(--text); }
+
+.warning-msg {
+  background: rgba(239,68,68,.08);
+  border: 1px solid rgba(239,68,68,.2);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-top: 12px;
+  font-size: 0.8rem;
+  color: #fca5a5;
+}
+
+/* ---- Settings / Integrations ---- */
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 16px; }
+.settings-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 22px;
+}
+.settings-card h3 {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.1rem;
+  letter-spacing: 0.06em;
+  color: var(--amber);
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.form-group { margin-bottom: 14px; }
+.form-label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 6px; display: block; }
+.form-input {
+  width: 100%;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 0.88rem;
+  font-family: 'DM Sans', sans-serif;
+  transition: border-color .2s;
+}
+.form-input:focus { outline: none; border-color: var(--amber); }
+.form-input::placeholder { color: var(--muted); }
+.toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.toggle-row:last-child { border-bottom: none; }
+.toggle-label { font-size: 0.88rem; color: var(--text); }
+.toggle-sub   { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+
+/* CSS toggle */
+.toggle { position: relative; display: inline-block; width: 40px; height: 22px; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  cursor: pointer;
+  transition: .2s;
+}
+.toggle-slider:before {
+  content: '';
+  position: absolute;
+  width: 16px; height: 16px;
+  left: 2px; top: 2px;
+  background: var(--muted);
+  border-radius: 50%;
+  transition: .2s;
+}
+.toggle input:checked + .toggle-slider { background: var(--amber-glow); border-color: var(--amber); }
+.toggle input:checked + .toggle-slider:before { transform: translateX(18px); background: var(--amber); }
+
+/* Keg profile selector */
+.profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.profile-btn {
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .2s;
+  font-family: 'DM Sans', sans-serif;
+}
+.profile-btn:hover { border-color: var(--amber); }
+.profile-btn.selected { border-color: var(--amber); background: var(--amber-glow); }
+.profile-btn-name { font-size: 0.85rem; font-weight: 600; }
+.profile-btn-oz   { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+
+/* ---- Toast ---- */
+#toast {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--green);
+  color: var(--text);
+  padding: 12px 18px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .25s, transform .25s;
+  pointer-events: none;
+  z-index: 999;
+  max-width: 280px;
+}
+#toast.show { opacity: 1; transform: none; }
+#toast.error { border-left-color: var(--red); }
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+  .app { flex-direction: column; }
+  .sidebar { width: 100%; height: auto; position: static; }
+  .sidebar-footer { display: none; }
+  .nav-section { display: flex; overflow-x: auto; padding: 8px; gap: 4px; }
+  .nav-label { display: none; }
+  .nav-item { white-space: nowrap; }
+  .content { padding: 16px; }
+  .topbar { padding: 12px 16px; }
+  .settings-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ================= SIDEBAR ================= -->
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-title">🍺 Kegerator</div>
+    <div class="logo-sub">Flow Monitor</div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">Monitor</div>
+    <button class="nav-item active" onclick="showPage('taps', this)">
+      <span class="nav-icon">🍺</span> Taps
+    </button>
+    <button class="nav-item" onclick="showPage('history', this)">
+      <span class="nav-icon">📊</span> Pour History
+    </button>
+    <button class="nav-item" onclick="showPage('stats', this)">
+      <span class="nav-icon">📈</span> Statistics
+    </button>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">Tools</div>
+    <button class="nav-item" onclick="showPage('diagnostics', this)">
+      <span class="nav-icon">🔬</span> Diagnostics
+    </button>
+    <button class="nav-item" onclick="showPage('settings', this)">
+      <span class="nav-icon">⚙️</span> Settings
+    </button>
+    <button class="nav-item" onclick="showPage('integrations', this)">
+      <span class="nav-icon">🔔</span> Integrations
+    </button>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="status-line"><span class="status-dot green" id="sdWifi"></span><span id="sdIp">Connecting...</span></div>
+    <div class="status-line"><span class="status-dot red"   id="sdMqtt"></span><span id="sdMqttLbl">MQTT</span></div>
+    <div class="status-line" style="color:var(--muted);font-size:.7rem" id="sdUptime">Uptime: —</div>
+  </div>
+</aside>
+
+<!-- ================= MAIN ================= -->
+<div class="main">
+  <div class="topbar">
+    <div class="page-title" id="pageTitle">Taps</div>
+    <div class="topbar-right">
+      <span class="pill pill-muted mono" id="topUptime">—</span>
+      <span class="pill" id="mqttPill">MQTT</span>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="alert-banner" id="alertBanner">
+      <span id="alertMsg">⚠️ Low keg detected</span>
+      <button class="alert-dismiss" onclick="dismissAlert()">Dismiss</button>
+    </div>
+
+    <!-- ===== TAPS PAGE ===== -->
+    <div class="page active" id="page-taps">
+      <div class="tap-grid" id="tapGrid"></div>
+    </div>
+
+    <!-- ===== HISTORY PAGE ===== -->
+    <div class="page" id="page-history">
+      <div class="table-controls">
+        <select class="select-styled" id="histSel" onchange="loadHistory()">
+          <option value="all">All Taps</option>
+          <option value="0">Tap 1</option><option value="1">Tap 2</option>
+          <option value="2">Tap 3</option><option value="3">Tap 4</option>
+          <option value="4">Tap 5</option><option value="5">Tap 6</option>
+        </select>
+        <button class="btn btn-ghost" style="flex:unset;padding:9px 16px;font-size:.78rem" onclick="loadHistory()">↻ Refresh</button>
+      </div>
+      <div class="chart-card">
+        <h3>Pour Volume Over Time</h3>
+        <canvas id="histChart"></canvas>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Time</th><th>Tap</th><th>Beer</th>
+            <th>Ounces</th><th>Keg After</th><th>Duration</th><th>Peak oz/s</th>
+          </tr></thead>
+          <tbody id="histBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== STATS PAGE ===== -->
+    <div class="page" id="page-stats">
+      <div class="kpi-strip" id="kpiStrip">
+        <div class="kpi"><div class="kpi-val" id="kTotalPours">—</div><div class="kpi-lbl">Total Pours</div></div>
+        <div class="kpi"><div class="kpi-val" id="kTotalOz">—</div><div class="kpi-lbl">Total Ounces</div></div>
+        <div class="kpi"><div class="kpi-val" id="kActiveTap">—</div><div class="kpi-lbl">Active Tap</div></div>
+        <div class="kpi"><div class="kpi-val" id="kUptime">—</div><div class="kpi-lbl">Uptime</div></div>
+      </div>
+      <div class="chart-card">
+        <h3>Keg Levels</h3>
+        <canvas id="kegChart"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>Pours by Tap (All Time)</h3>
+        <canvas id="tapPourChart"></canvas>
+      </div>
+    </div>
+
+    <!-- ===== DIAGNOSTICS PAGE ===== -->
+    <div class="page" id="page-diagnostics">
+      <div class="diag-grid" id="diagGrid"></div>
+    </div>
+
+    <!-- ===== SETTINGS PAGE ===== -->
+    <div class="page" id="page-settings">
+      <div class="settings-grid">
+        <div class="settings-card">
+          <h3>⚠️ Alert Thresholds</h3>
+          <div class="form-group">
+            <label class="form-label">Low Keg Alert (oz remaining)</label>
+            <input type="number" class="form-input" id="inpThreshold" value="100" min="0">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Min Pour to Log (oz)</label>
+            <input type="number" class="form-input" id="inpMinPour" value="0.5" step="0.5" min="0">
+          </div>
+          <button class="btn btn-amber" style="width:100%;margin-top:4px" onclick="saveAlertSettings()">Save Alert Settings</button>
+        </div>
+
+        <div class="settings-card">
+          <h3>🪣 Keg Profiles</h3>
+          <div class="form-group">
+            <label class="form-label">Apply Profile to Tap</label>
+            <select class="form-input" id="profileTapSel">
+              <option value="0">Tap 1</option><option value="1">Tap 2</option>
+              <option value="2">Tap 3</option><option value="3">Tap 4</option>
+              <option value="4">Tap 5</option><option value="5">Tap 6</option>
+            </select>
+          </div>
+          <div class="profile-grid" id="profileGrid"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== INTEGRATIONS PAGE ===== -->
+    <div class="page" id="page-integrations">
+      <div class="settings-grid">
+        <div class="settings-card">
+          <h3>💬 Slack</h3>
+          <div class="form-group">
+            <label class="form-label">Incoming Webhook URL</label>
+            <input type="text" class="form-input" id="inpSlackUrl" placeholder="https://hooks.slack.com/services/...">
+          </div>
+          <div class="toggle-row">
+            <div><div class="toggle-label">Enable Slack</div></div>
+            <label class="toggle"><input type="checkbox" id="togSlack"><span class="toggle-slider"></span></label>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:14px">
+            <button class="btn btn-ghost" onclick="testSlack()">Test</button>
+            <button class="btn btn-amber" onclick="saveIntegrations()">Save</button>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h3>🎮 Discord</h3>
+          <div class="form-group">
+            <label class="form-label">Webhook URL</label>
+            <input type="text" class="form-input" id="inpDiscordUrl" placeholder="https://discord.com/api/webhooks/...">
+          </div>
+          <div class="toggle-row">
+            <div><div class="toggle-label">Enable Discord</div></div>
+            <label class="toggle"><input type="checkbox" id="togDiscord"><span class="toggle-slider"></span></label>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:14px">
+            <button class="btn btn-ghost" onclick="testDiscord()">Test</button>
+            <button class="btn btn-amber" onclick="saveIntegrations()">Save</button>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h3>🔗 Generic Webhook</h3>
+          <div class="form-group">
+            <label class="form-label">POST URL</label>
+            <input type="text" class="form-input" id="inpGenericUrl" placeholder="https://maker.ifttt.com/trigger/...">
+          </div>
+          <div class="toggle-row">
+            <div><div class="toggle-label">Enable Webhook</div></div>
+            <label class="toggle"><input type="checkbox" id="togGeneric"><span class="toggle-slider"></span></label>
+          </div>
+          <button class="btn btn-amber" style="width:100%;margin-top:14px" onclick="saveIntegrations()">Save</button>
+        </div>
+
+        <div class="settings-card">
+          <h3>🔔 Notification Events</h3>
+          <div class="toggle-row">
+            <div><div class="toggle-label">Pour Complete</div><div class="toggle-sub">Alert on every pour</div></div>
+            <label class="toggle"><input type="checkbox" id="togOnPour"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div><div class="toggle-label">Low Keg</div><div class="toggle-sub">When keg hits threshold</div></div>
+            <label class="toggle"><input type="checkbox" id="togOnLow" checked><span class="toggle-slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div><div class="toggle-label">Keg Empty</div><div class="toggle-sub">When keg reaches 0</div></div>
+            <label class="toggle"><input type="checkbox" id="togOnEmpty" checked><span class="toggle-slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div><div class="toggle-label">Sensor Errors</div><div class="toggle-sub">Noise or stuck sensor</div></div>
+            <label class="toggle"><input type="checkbox" id="togOnSensor" checked><span class="toggle-slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div><div class="toggle-label">System Boot</div><div class="toggle-sub">On firmware restart</div></div>
+            <label class="toggle"><input type="checkbox" id="togOnBoot"><span class="toggle-slider"></span></label>
+          </div>
+          <button class="btn btn-amber" style="width:100%;margin-top:14px" onclick="saveNotifyEvents()">Save Events</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+</div><!-- /app -->
+
+<div id="toast"></div>
+
+<script>
+// ==============================================================
+// State
+// ==============================================================
+let state = null;
+let histChart = null, kegChart = null, tapPourChart = null;
+let profiles = [];
+let selectedProfile = {};
+
+const pageTitles = {
+  taps:'Taps', history:'Pour History', stats:'Statistics',
+  diagnostics:'Diagnostics', settings:'Settings', integrations:'Integrations'
+};
+
+// Chart.js defaults for dark theme
+Chart.defaults.color = '#7A756D';
+Chart.defaults.borderColor = '#2E2E2E';
+
+// ==============================================================
+// Navigation
+// ==============================================================
+function showPage(id, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  if (btn) btn.classList.add('active');
+  document.getElementById('pageTitle').textContent = pageTitles[id] || id;
+
+  if (id === 'history')     loadHistory();
+  if (id === 'stats')       renderCharts();
+  if (id === 'diagnostics') loadDiagnostics();
+  if (id === 'integrations') loadIntegrations();
+  if (id === 'settings')    loadSettings();
+}
+
+// ==============================================================
+// Toast
+// ==============================================================
+function toast(msg, isError = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show' + (isError ? ' error' : '');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.className = '', 3000);
+}
+
+// ==============================================================
+// Status polling & tap rendering
+// ==============================================================
+async function pollStatus() {
+  try {
+    const res = await fetch('/api/status');
+    state = await res.json();
+    renderTaps();
+    renderSidebar();
+    renderTopbar();
+    checkAlerts();
+  } catch(e) { /* network hiccup */ }
+}
+
+function renderTopbar() {
+  if (!state) return;
+  document.getElementById('topUptime').textContent = fmtUptime(state.uptime);
+  const pill = document.getElementById('mqttPill');
+  pill.className = 'pill ' + (state.mqtt_connected ? 'pill-green' : 'pill-red');
+  pill.textContent = state.mqtt_connected ? 'MQTT ✓' : 'MQTT ✕';
+}
+
+function renderSidebar() {
+  if (!state) return;
+  document.getElementById('sdIp').textContent = location.hostname;
+  document.getElementById('sdUptime').textContent = 'Uptime: ' + fmtUptime(state.uptime);
+  const mqttDot = document.getElementById('sdMqtt');
+  mqttDot.className = 'status-dot ' + (state.mqtt_connected ? 'green' : 'red');
+
+  // KPI page
+  document.getElementById('kTotalPours').textContent = state.totalPours;
+  document.getElementById('kTotalOz').textContent    = state.totalOunces.toFixed(1);
+  document.getElementById('kActiveTap').textContent  = state.activeTap >= 0 ? 'Tap '+(state.activeTap+1) : 'None';
+  document.getElementById('kUptime').textContent     = fmtUptime(state.uptime);
+}
+
+function renderTaps() {
+  if (!state) return;
+  const grid = document.getElementById('tapGrid');
+  state.taps.forEach(tap => {
+    const pct  = Math.max(0, Math.min(100, tap.level / tap.capacity * 100));
+    const fill = pct > 30 ? 'ok' : pct > 15 ? 'warn' : 'crit';
+    const cardClass = (tap.isPouring ? 'pouring' : tap.lowKegAlert ? 'low' : '');
+
+    let el = document.getElementById('tc-' + tap.index);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'tc-' + tap.index;
+      el.className = 'tap-card';
+      grid.appendChild(el);
+    }
+    el.className = 'tap-card ' + cardClass;
+
+    let badges = '';
+    if (tap.isPouring)   badges += '<span class="badge badge-pour">Pouring</span>';
+    if (tap.lowKegAlert) badges += '<span class="badge badge-low">Low Keg</span>';
+    if (tap.calibrating) badges += '<span class="badge badge-cal">Calibrating</span>';
+
+    const pourLive = tap.isPouring ? `
+      <div class="pour-live">
+        <span class="pour-live-icon">🍺</span>
+        <div>
+          <div class="pour-live-amount">${tap.currentPour.toFixed(2)} oz</div>
+          <div class="pour-live-label">Pouring now…</div>
+        </div>
+      </div>` : '';
+
+    el.innerHTML = `
+      <div class="tap-accent"></div>
+      <div class="tap-body">
+        <div class="tap-header">
+          <div class="tap-name-block">
+            <div class="tap-number">Tap ${tap.index + 1}</div>
+            <div class="tap-name">${tap.name}</div>
+          </div>
+          <div class="tap-badges">${badges}</div>
+        </div>
+
+        <div class="beer-row">
+          <input id="bi-${tap.index}" value="${tap.beer}" placeholder="Beer name…">
+          <button class="btn btn-green" style="flex:unset;padding:8px 12px;font-size:.7rem" onclick="updateBeer(${tap.index})">Save</button>
+        </div>
+
+        <div class="keg-section">
+          <div class="keg-meta">
+            <span class="keg-meta-left">Keg Level</span>
+            <span>
+              <span class="keg-pct">${pct.toFixed(0)}%</span>
+              <span class="keg-oz">&nbsp;(${tap.level.toFixed(0)} / ${tap.capacity} oz)</span>
+            </span>
+          </div>
+          <div class="keg-track"><div class="keg-fill ${fill}" id="kf-${tap.index}" style="width:${pct}%"></div></div>
+        </div>
+
+        <div class="stats-row">
+          <div class="stat">
+            <div class="stat-val mono">${tap.pulsesPerOz.toFixed(1)}</div>
+            <div class="stat-lbl">pulses / oz</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val mono">${tap.pourCount}</div>
+            <div class="stat-lbl">pours logged</div>
+          </div>
+        </div>
+
+        ${pourLive}
+        <div id="lp-${tap.index}"></div>
+
+        <div class="btn-row">
+          <button class="btn btn-ghost" onclick="startCal(${tap.index})">Calibrate</button>
+          <button class="btn btn-red"   onclick="resetKeg(${tap.index})">Reset Keg</button>
+        </div>
+      </div>`;
+
+    loadLastPour(tap.index);
+  });
+}
+
+async function loadLastPour(idx) {
+  try {
+    const res = await fetch('/api/last_pour?index=' + idx);
+    const lp = await res.json();
+    const el = document.getElementById('lp-' + idx);
+    if (!el || !lp || !lp.ounces) return;
+    el.innerHTML = `
+      <div class="last-pour">
+        <div class="last-pour-title">Last Pour</div>
+        <div class="last-pour-row">
+          <div class="lp-item"><div class="lp-lbl">Amount</div><div class="lp-val">${lp.ounces.toFixed(2)} oz</div></div>
+          <div class="lp-item"><div class="lp-lbl">Duration</div><div class="lp-val">${lp.duration.toFixed(1)} s</div></div>
+          <div class="lp-item"><div class="lp-lbl">Peak Flow</div><div class="lp-val">${lp.peakFlow.toFixed(1)} oz/s</div></div>
+          <div class="lp-item"><div class="lp-lbl">Keg After</div><div class="lp-val">${lp.kegAfter.toFixed(1)} oz</div></div>
+        </div>
+        <div class="lp-time">${lp.time}</div>
+      </div>`;
+  } catch(e) {}
+}
+
+// ==============================================================
+// Alert banner
+// ==============================================================
+function checkAlerts() {
+  if (!state) return;
+  const low = state.taps.find(t => t.lowKegAlert);
+  const banner = document.getElementById('alertBanner');
+  if (low) {
+    document.getElementById('alertMsg').textContent =
+      `⚠️ Low keg — ${low.name}: ${low.level.toFixed(1)} oz remaining (${(low.level/low.capacity*100).toFixed(0)}%)`;
+    banner.classList.add('show');
+  }
+}
+function dismissAlert() { document.getElementById('alertBanner').classList.remove('show'); }
+
+// ==============================================================
+// API actions
+// ==============================================================
+function post(url, body) {
+  return fetch(url, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
+}
+function postJSON(url, obj) {
+  return fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(obj) });
+}
+
+function updateBeer(i) {
+  const name = document.getElementById('bi-' + i).value;
+  post('/api/beer/update', `index=${i}&name=${encodeURIComponent(name)}`)
+    .then(() => toast('Beer name updated'));
+}
+
+function resetKeg(i) {
+  if (!confirm(`Reset Tap ${i+1} to full keg?`)) return;
+  post('/api/reset', `index=${i}`).then(() => { toast('Keg reset to full'); pollStatus(); });
+}
+
+function startCal(i) {
+  post('/api/calibrate/start', `index=${i}`).then(() => {
+    alert('Calibration started!\n\nPour your exact measured amount now (e.g. 8 oz), then click OK.');
+    const oz = prompt('Enter the exact ounces you just poured:');
+    if (oz && !isNaN(oz) && parseFloat(oz) > 0) {
+      post('/api/calibrate/end', `index=${i}&ounces=${oz}`)
+        .then(r => r.json())
+        .then(d => {
+          if (d.success) toast('✓ Calibration saved!');
+          else toast('Calibration failed — no pulses detected', true);
+          pollStatus();
+        });
+    } else {
+      toast('Calibration cancelled');
+    }
+  });
+}
+
+// ==============================================================
+// History
+// ==============================================================
+async function loadHistory() {
+  const val = document.getElementById('histSel').value;
+  const url = val === 'all' ? '/api/history?index=all' : `/api/history?index=${val}`;
+  try {
+    const rows = await fetch(url).then(r => r.json());
+    renderHistory(rows);
+  } catch(e) { toast('Failed to load history', true); }
+}
+
+function renderHistory(rows) {
+  document.getElementById('histBody').innerHTML = rows.map(r => `
+    <tr>
+      <td class="td-mono">${r.time}</td>
+      <td>${r.tap !== undefined ? 'Tap ' + r.tap : '—'}</td>
+      <td>${r.beer}</td>
+      <td class="td-mono">${r.ounces.toFixed(2)}</td>
+      <td class="td-mono">${r.kegAfter.toFixed(1)} oz</td>
+      <td class="td-mono">${(r.duration||0).toFixed(1)} s</td>
+      <td class="td-mono">${(r.peakFlow||0).toFixed(1)}</td>
+    </tr>`).join('');
+
+  if (histChart) { histChart.destroy(); histChart = null; }
+  const ctx = document.getElementById('histChart').getContext('2d');
+  histChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: rows.map((r,i) => r.time || `#${i+1}`),
+      datasets: [{
+        label: 'oz',
+        data: rows.map(r => r.ounces),
+        backgroundColor: '#F5A62355',
+        borderColor: '#F5A623',
+        borderWidth: 1,
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { maxRotation: 45, font: { family: 'DM Mono', size: 10 } } },
+        y: { ticks: { font: { family: 'DM Mono' } }, title: { display: true, text: 'Ounces', color:'#7A756D' } }
+      }
+    }
+  });
+}
+
+// ==============================================================
+// Charts
+// ==============================================================
+function renderCharts() {
+  if (!state) return;
+
+  // Keg level chart
+  if (kegChart) { kegChart.destroy(); kegChart = null; }
+  const kc = document.getElementById('kegChart').getContext('2d');
+  const colors = ['#F5A623','#22C55E','#3B82F6','#A855F7','#EC4899','#EAB308'];
+  kegChart = new Chart(kc, {
+    type: 'bar',
+    data: {
+      labels: state.taps.map(t => t.name),
+      datasets: [{
+        label: 'Remaining oz',
+        data: state.taps.map(t => t.level),
+        backgroundColor: state.taps.map((_, i) => colors[i%colors.length] + '44'),
+        borderColor:     state.taps.map((_, i) => colors[i%colors.length]),
+        borderWidth: 2,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { max: state.taps[0]?.capacity || 640, ticks: { font:{family:'DM Mono'} } },
+        x: { ticks: { font:{family:'DM Mono'} } }
+      }
+    }
+  });
+
+  // Pours per tap
+  if (tapPourChart) { tapPourChart.destroy(); tapPourChart = null; }
+  const pc = document.getElementById('tapPourChart').getContext('2d');
+  tapPourChart = new Chart(pc, {
+    type: 'doughnut',
+    data: {
+      labels: state.taps.map(t => t.name),
+      datasets: [{
+        data: state.taps.map(t => t.pourCount),
+        backgroundColor: colors.map(c => c + '55'),
+        borderColor: colors,
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { font:{family:'DM Sans'}, padding: 16 } } }
+    }
+  });
+}
+
+// ==============================================================
+// Diagnostics
+// ==============================================================
+async function loadDiagnostics() {
+  try {
+    const data = await fetch('/api/diagnostics').then(r => r.json());
+    renderDiagnostics(data);
+  } catch(e) { toast('Failed to load diagnostics', true); }
+}
+
+function renderDiagnostics(data) {
+  const grid = document.getElementById('diagGrid');
+  grid.innerHTML = data.map(d => {
+    const hClass = d.health === 'Good' ? 'health-good' : d.health === 'Good' ? 'health-good' : d.health === 'No Signal' || d.health === 'Stuck!' ? 'health-error' : 'health-warn';
+    const qColor = d.pulseQuality > 70 ? '#22c55e' : d.pulseQuality > 40 ? '#eab308' : '#ef4444';
+    const warn = d.warning ? `<div class="warning-msg">⚠️ ${d.warning}</div>` : '';
+
+    return `
+    <div class="diag-card">
+      <div class="diag-header">
+        <div class="diag-name">Tap ${d.tap}</div>
+        <span class="health-badge ${hClass}">${d.health}</span>
+      </div>
+
+      <div class="quality-bar-wrap">
+        <div class="quality-label">
+          <span>Signal Quality</span>
+          <span class="mono">${d.pulseQuality.toFixed(0)}%</span>
+        </div>
+        <div class="quality-track">
+          <div class="quality-fill" style="width:${d.pulseQuality}%;background:${qColor}"></div>
+        </div>
+      </div>
+
+      <div class="diag-stats">
+        <div class="diag-stat"><div class="diag-stat-lbl">Avg Interval</div><div class="diag-stat-val">${d.avgIntervalMs.toFixed(1)} ms</div></div>
+        <div class="diag-stat"><div class="diag-stat-lbl">Std Dev</div><div class="diag-stat-val">${d.stdDevMs.toFixed(1)} ms</div></div>
+        <div class="diag-stat"><div class="diag-stat-lbl">Noise Pulses</div><div class="diag-stat-val">${d.noisePulses}</div></div>
+        <div class="diag-stat"><div class="diag-stat-lbl">Total Pulses</div><div class="diag-stat-val">${d.totalPulses}</div></div>
+        <div class="diag-stat"><div class="diag-stat-lbl">Peak Flow</div><div class="diag-stat-val">${d.peakFlowOz.toFixed(1)} oz/s</div></div>
+        <div class="diag-stat"><div class="diag-stat-lbl">Avg Pour</div><div class="diag-stat-val">${d.avgPourSizeOz.toFixed(1)} oz</div></div>
+        <div class="diag-stat"><div class="diag-stat-lbl">Pours/Day</div><div class="diag-stat-val">${d.poursPerDay.toFixed(1)}</div></div>
+        <div class="diag-stat"><div class="diag-stat-lbl">Days Left</div><div class="diag-stat-val">${d.daysLeft > 0 ? d.daysLeft.toFixed(1) : '—'}</div></div>
+        <div class="diag-stat"><div class="diag-stat-lbl">Calibrated</div><div class="diag-stat-val">${d.calibrated ? '✓ Yes' : '✗ No'}</div></div>
+        <div class="diag-stat"><div class="diag-stat-lbl">Pulses/oz</div><div class="diag-stat-val">${d.pulsesPerOz.toFixed(0)}</div></div>
+      </div>
+      ${warn}
+    </div>`;
+  }).join('');
+}
+
+// ==============================================================
+// Settings
+// ==============================================================
+async function loadSettings() {
+  // Load keg profiles
+  try {
+    profiles = await fetch('/api/profiles').then(r => r.json());
+    renderProfiles();
+  } catch(e) {}
+}
+
+function renderProfiles() {
+  document.getElementById('profileGrid').innerHTML = profiles.map((p, i) => `
+    <button class="profile-btn" onclick="selectProfile(${i}, this)">
+      <div class="profile-btn-name">${p.name}</div>
+      <div class="profile-btn-oz">${p.oz} oz</div>
+    </button>`).join('');
+}
+
+function selectProfile(i, el) {
+  document.querySelectorAll('.profile-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedProfile = profiles[i];
+}
+
+async function saveAlertSettings() {
+  const thresh = document.getElementById('inpThreshold').value;
+  await post('/api/settings/alert', `threshold=${thresh}`);
+  toast('Alert settings saved');
+}
+
+function applyProfile() {
+  if (!selectedProfile) { toast('Select a keg profile first', true); return; }
+  const tap = document.getElementById('profileTapSel').value;
+  post('/api/settings/profile', `tap=${tap}&profile=${selectedProfile.id}`)
+    .then(() => { toast(`Profile "${selectedProfile.name}" applied to Tap ${parseInt(tap)+1}`); pollStatus(); });
+}
+
+// ==============================================================
+// Integrations
+// ==============================================================
+async function loadIntegrations() {
+  try {
+    const cfg = await fetch('/api/notifications/config').then(r => r.json());
+    document.getElementById('inpSlackUrl').value   = cfg.slackUrl || '';
+    document.getElementById('togSlack').checked    = cfg.slackEnabled;
+    document.getElementById('inpDiscordUrl').value = cfg.discordUrl || '';
+    document.getElementById('togDiscord').checked  = cfg.discordEnabled;
+    document.getElementById('inpGenericUrl').value = cfg.genericUrl || '';
+    document.getElementById('togGeneric').checked  = cfg.genericEnabled;
+    document.getElementById('togOnPour').checked   = cfg.onPour;
+    document.getElementById('togOnLow').checked    = cfg.onLowKeg;
+    document.getElementById('togOnEmpty').checked  = cfg.onEmpty;
+    document.getElementById('togOnSensor').checked = cfg.onSensorErr;
+    document.getElementById('togOnBoot').checked   = cfg.onBoot;
+  } catch(e) {}
+}
+
+function saveIntegrations() {
+  const payload = {
+    slackUrl:       document.getElementById('inpSlackUrl').value,
+    slackEnabled:   document.getElementById('togSlack').checked,
+    discordUrl:     document.getElementById('inpDiscordUrl').value,
+    discordEnabled: document.getElementById('togDiscord').checked,
+    genericUrl:     document.getElementById('inpGenericUrl').value,
+    genericEnabled: document.getElementById('togGeneric').checked,
+  };
+  postJSON('/api/notifications/config', payload)
+    .then(() => toast('Integration settings saved'));
+}
+
+function saveNotifyEvents() {
+  const payload = {
+    onPour:     document.getElementById('togOnPour').checked,
+    onLowKeg:   document.getElementById('togOnLow').checked,
+    onEmpty:    document.getElementById('togOnEmpty').checked,
+    onSensorErr:document.getElementById('togOnSensor').checked,
+    onBoot:     document.getElementById('togOnBoot').checked,
+  };
+  postJSON('/api/notifications/config', payload)
+    .then(() => toast('Notification events saved'));
+}
+
+async function testSlack() {
+  const res = await post('/api/notifications/test/slack', '');
+  const d = await res.json();
+  toast(d.success ? '✓ Slack test sent!' : 'Slack test failed — check URL', !d.success);
+}
+
+async function testDiscord() {
+  const res = await post('/api/notifications/test/discord', '');
+  const d = await res.json();
+  toast(d.success ? '✓ Discord test sent!' : 'Discord test failed — check URL', !d.success);
+}
+
+// ==============================================================
+// Utils
+// ==============================================================
+function fmtUptime(s) {
+  const d=Math.floor(s/86400), h=Math.floor((s%86400)/3600), m=Math.floor((s%3600)/60), ss=s%60;
+  if(d) return `${d}d ${h}h ${m}m`;
+  if(h) return `${h}h ${m}m ${ss}s`;
+  if(m) return `${m}m ${ss}s`;
+  return `${ss}s`;
+}
+
+// ==============================================================
+// Boot
+// ==============================================================
+pollStatus();
+setInterval(pollStatus, 2000);
+loadSettings(); // preload profiles
+</script>
+</body>
+</html>
