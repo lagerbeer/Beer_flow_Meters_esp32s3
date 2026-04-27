@@ -18,6 +18,7 @@
 #define PULSE_DEBOUNCE_MS        50
 #define POUR_TIMEOUT_MS          5000   // ms of silence before pour ends
 #define POUR_MIN_PULSES          3      // pulses required before pour is declared (filters noise)
+#define POUR_MIN_OZ              5.0f   // pours below this are discarded as ghost pours (pressure noise)
 #define MQTT_PUBLISH_INTERVAL_MS 30000
 #define LAST_POUR_PUBLISH_MS     60000
 #define MQTT_RECONNECT_INTERVAL  5000

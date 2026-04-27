@@ -12,6 +12,7 @@
 #include <driver/gpio.h>
 #include <nvs_flash.h>
 #include <ArduinoJson.h>
+#include <time.h>
 
 #include "config.h"
 #include "credentials.h"   // <-- add to .gitignore
@@ -1186,9 +1187,19 @@ void setupWiFi() {
 
     if (WiFi.status() == WL_CONNECTED) {
         LOG_I("WiFi connected — IP: %s", WiFi.localIP().toString().c_str());
+        configTime(-5 * 3600, 3600, "pool.ntp.org", "time.nist.gov"); // UTC-5 + DST
+        LOG_I("NTP sync started");
     } else {
         LOG_E("WiFi connection failed");
     }
+}
+
+static String getFormattedDateTime() {
+    struct tm t;
+    if (!getLocalTime(&t, 2000)) return "time-unknown";
+    char buf[32];
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &t);
+    return String(buf);
 }
 
 // ============================================================
@@ -1290,12 +1301,8 @@ void mqttPublishTapData() {
         }
     }
 
-    // Aggregate stats
-    DynamicJsonDocument statsDoc(64);
-    statsDoc["total_pours"]  = tm.getTotalPours();
-    statsDoc["total_ounces"] = tm.getTotalOunces();
-    String statsJson; serializeJson(statsDoc, statsJson);
-    g_mqtt.publish(MQTT_TOPIC_STATS, statsJson.c_str());
+    // Full tap status JSON (consumed by Home Assistant sensors)
+    g_mqtt.publish(MQTT_TOPIC_STATS, tm.getTapStatusJSON().c_str());
 }
 
 void mqttPublishPourEvent(int i) {
@@ -1304,9 +1311,13 @@ void mqttPublishPourEvent(int i) {
     TapConfig cfg = tm.getConfig(i);
     TapState  st  = tm.getState(i);
 
+    String dateTime = getFormattedDateTime();
+
     DynamicJsonDocument doc(256);
+    doc["tap"]      = i + 1;
     doc["ounces"]   = st.lastPour.ounces;
     doc["beer"]     = cfg.beerName;
+    doc["dateTime"] = dateTime;
     doc["timestamp"]= st.lastPour.timestamp;
     doc["kegLevel"] = st.currentKegLevel;
     doc["duration"] = st.lastPour.duration;
@@ -1315,7 +1326,11 @@ void mqttPublishPourEvent(int i) {
 
     String topic = "beermonitor/tap/" + String(i+1) + "/pour";
     g_mqtt.publish(topic.c_str(), json.c_str());
-    LOG_I("MQTT pour event published — Tap %d %.2f oz", i + 1, st.lastPour.ounces);
+
+    // Retained "last pour" topic — always holds the most recent pour across all taps
+    g_mqtt.publish("beermonitor/last_pour", json.c_str(), true);
+
+    LOG_I("MQTT pour event published — Tap %d %.2f oz @ %s", i + 1, st.lastPour.ounces, dateTime.c_str());
 }
 
 void mqttPublishAllLastPours() {

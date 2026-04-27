@@ -159,6 +159,13 @@ void TapManager::finalisePour(int i) {
 
     float amount   = s.currentPourOz;
     float duration = (float)(now - s.pourStartTime) / 1000.0f;
+
+    if (amount < POUR_MIN_OZ) {
+        LOG_D("Ghost pour discarded - Tap %d: %.2f oz (below %.1f oz threshold)", i + 1, amount, POUR_MIN_OZ);
+        s.currentPourOz = 0.0f;
+        return;
+    }
+
     float newLevel = max(0.0f, s.currentKegLevel - amount);
 
     PourEvent e;
@@ -333,6 +340,7 @@ String TapManager::getTapStatusJSON() const {
         t["name"]        = c.tapName;
         t["beer"]        = c.beerName;
         t["level"]       = s.currentKegLevel;
+        t["levelGal"]    = s.currentKegLevel / 128.0f;
         t["capacity"]    = c.kegSize;
         t["pulsesPerOz"] = c.pulsesPerOz;
         t["isPouring"]   = s.isPouring;
