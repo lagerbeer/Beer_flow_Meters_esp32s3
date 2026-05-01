@@ -1,4 +1,5 @@
 # Beer Flow Monitor — ESP32-S3
+<img width="4096" height="2160" alt="raspberrypints" src="https://github.com/user-attachments/assets/cd4d3a44-75fb-4040-95d4-404b07b8d43b" />
 
 A 6-tap kegerator / keezer flow monitor built on the **ESP32-S3**. Tracks every pour in real time, serves a live web dashboard, publishes to MQTT, and sends Slack/Discord alerts — all from a single embedded device.
 
