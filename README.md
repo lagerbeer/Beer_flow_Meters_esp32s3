@@ -54,6 +54,7 @@ All configuration survives reboots — stored in ESP32 Non-Volatile Storage:
 - **Slack** incoming webhook
 - **Discord** webhook
 - **Generic HTTP webhook** (JSON POST)
+- **Google Sheets** — logs full pour + keg data (tap, beer, ABV/IBU, ounces, duration, peak flow, keg level/capacity/%) to a spreadsheet after every real pour
 - Events: boot, pour completed, low keg alert, keg empty, keg reset, sensor error
 
 ### CSV Logging
@@ -230,7 +231,21 @@ pio device monitor
 Click **Reset Keg** to mark the keg as full again. This also logs a snapshot to the CSV log.
 
 ### Notifications
-Under **Settings** on the dashboard, enter Slack and/or Discord webhook URLs and enable them. Test buttons send a sample message immediately.
+Under **Integrations** on the dashboard, enter Slack and/or Discord webhook URLs and enable them. Test buttons send a sample message immediately.
+
+### Google Sheets Logging
+Logs tap, beer, pour amount/duration/flow rate, and keg level/capacity to a Google Sheet after every real pour — a permanent, exportable pour log outside the device.
+
+1. Create a new Google Sheet (sheets.new).
+2. **Extensions → Apps Script**, delete the starter code, and paste in [`google_apps_script.gs`](google_apps_script.gs).
+3. **Deploy → New deployment → Web app** — Execute as **Me**, Who has access **Anyone**.
+4. Deploy, authorize when prompted, and copy the Web app URL (ends in `/exec`).
+5. On the dashboard's **Integrations** tab → **Google Sheets**, paste the URL, check **Log Every Pour**, and click **Save**.
+6. Click **Test** to confirm a row appears in the sheet.
+
+A "Pours" sheet is created automatically on first write, with a header row and one row per pour.
+
+> If Google Sheets (or Slack/Discord/any webhook) never reaches the internet while local things like MQTT keep working, check that a DNS server is set — `setupWiFi()` configures explicit DNS (`8.8.8.8` / `1.1.1.1`) for static IP setups, since leaving it unset falls back to the gateway, which not all routers proxy for DNS.
 
 ---
 
@@ -286,7 +301,10 @@ All endpoints are on port 80. POST bodies use `application/x-www-form-urlencoded
 | `POST /api/settings/alert` | `threshold` | Set low-keg threshold (oz) |
 | `POST /api/settings/webhook` | `url` | Set generic webhook URL |
 | `POST /api/settings/profile` | `tap`, `profile` | Apply keg size profile |
-| `POST /api/notifications/config` | `slackUrl`, `slackEnabled`, `discordUrl`, `discordEnabled` | Save notification settings |
+| `POST /api/notifications/config` | `slackUrl`, `slackEnabled`, `discordUrl`, `discordEnabled`, `genericUrl`, `genericEnabled`, `sheetsUrl`, `sheetsEnabled` | Save notification settings (JSON body) |
+| `POST /api/notifications/test/slack` | — | Send a Slack test message |
+| `POST /api/notifications/test/discord` | — | Send a Discord test message |
+| `POST /api/notifications/test/sheets` | — | Send a test row to the configured Google Sheet |
 
 ---
 
@@ -321,12 +339,13 @@ Beer_flow_Meters_esp32s3/
 │   ├── TapManager.h/.cpp         # Flow counting, calibration, pour state machine
 │   ├── DiagnosticsManager.h/.cpp # Sensor health scoring
 │   ├── DisplayManager.h/.cpp     # TFT display (LovyanGFX)
-│   ├── NotificationManager.h/.cpp# Slack / Discord / webhook alerts
+│   ├── NotificationManager.h/.cpp# Slack / Discord / webhook / Google Sheets alerts
 │   ├── SDManager.h/.cpp          # CSV logging to LittleFS
 │   ├── config.h                  # Tunable constants
 │   ├── pins.h                    # TFT pin definitions
 │   ├── credentials.h             # ⚠ NOT committed — copy from .example
 │   └── credentials.h.example     # Template — fill in and rename
+├── google_apps_script.gs         # Apps Script Web App — logs pours to Google Sheets
 ├── platformio.ini                # Build environments (USB + OTA)
 └── README.md
 ```
