@@ -30,6 +30,8 @@ void IRAM_ATTR TapManager::onPulse(int tapIndex) {
 
     if (now - s.lastPulseTime < PULSE_DEBOUNCE_MS) return;
 
+    unsigned long gapSincePrev = now - s.lastPulseTime;
+
     s.pulseCount = s.pulseCount + 1;
     s.totalPulsesDetected++;
     s.lastPulseTime = now;
@@ -38,8 +40,18 @@ void IRAM_ATTR TapManager::onPulse(int tapIndex) {
         s.calibPulses = s.calibPulses + 1;
     }
 
-    // Only declare a pour after POUR_MIN_PULSES consecutive pulses (noise filter)
+    // Only declare a pour after POUR_MIN_PULSES consecutive pulses that arrive
+    // in a tight burst (noise filter). Real flow produces pulses only a few
+    // ms to a few tens of ms apart even at a slow trickle; isolated noise/
+    // vibration pulses are typically hundreds of ms to seconds apart. If the
+    // gap since the previous pulse is too large, this pulse can't be part of
+    // the same burst — restart the count from here instead of letting stray
+    // pulses accumulate across unrelated noise events.
     if (!s.isPouring) {
+        if (s.pendingPulses > 0 && gapSincePrev > POUR_BURST_GAP_MS) {
+            s.pendingPulses = 0;
+            s.pulseCount    = 1;
+        }
         s.pendingPulses++;
         if (s.pendingPulses >= POUR_MIN_PULSES && m_activeTap == -1) {
             m_activeTap       = tapIndex;
@@ -133,11 +145,29 @@ float TapManager::calcInstantFlowRate(int i) {
 }
 
 void TapManager::checkPourTimeout() {
+    unsigned long now = millis();
+
+    // Decay stale noise pulses on taps that never became the active pour.
+    // Without this, isolated vibration/pressure pulses on an idle tap would
+    // accumulate in pendingPulses/pulseCount indefinitely (they were only
+    // ever cleared below, for the tap that actually started pouring), so a
+    // single stray pulse hours later could instantly declare a "pour" using
+    // whatever leftover pulseCount had built up — the source of both the
+    // phantom "pouring" screen flicker and the ghost pour records.
+    for (int i = 0; i < NUM_TAPS; i++) {
+        if (i == m_activeTap) continue;
+        TapState& s = m_state[i];
+        if (s.pendingPulses > 0 && now - s.lastPulseTime > POUR_TIMEOUT_MS) {
+            s.pendingPulses = 0;
+            s.pulseCount    = 0;
+        }
+    }
+
     if (m_activeTap < 0) return;
     int i = m_activeTap;
     TapState& s = m_state[i];
 
-    if (millis() - s.lastPulseTime > POUR_TIMEOUT_MS) {
+    if (now - s.lastPulseTime > POUR_TIMEOUT_MS) {
         if (s.isPouring && s.currentPourOz > 0.01f) {
             finalisePour(i);
         }

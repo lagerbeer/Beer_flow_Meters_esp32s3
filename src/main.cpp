@@ -321,6 +321,19 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             <button class="btn btn-amber" style="width:100%;margin-top:8px" onclick="saveIntegrations()">Save</button>
         </div>
         <div class="settings-card">
+            <h3>📊 Google Sheets</h3>
+            <div class="form-row"><label>Apps Script Web App URL</label><input type="text" id="inpSheetsUrl" placeholder="https://script.google.com/macros/s/.../exec"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0">
+                <span style="font-size:.88rem">Log Every Pour</span>
+                <input type="checkbox" id="togSheets" style="width:18px;height:18px;accent-color:var(--amber)">
+            </div>
+            <p style="color:var(--muted);font-size:.8rem;margin-bottom:10px">Sends tap, beer, pour amount/duration/flow, and keg level/capacity to a Google Sheet after every pour. See README for the Apps Script setup.</p>
+            <div style="display:flex;gap:8px">
+                <button class="btn btn-blue" onclick="testSheets()">Test</button>
+                <button class="btn btn-amber" onclick="saveIntegrations()">Save</button>
+            </div>
+        </div>
+        <div class="settings-card">
             <h3>🔔 Notification Events</h3>
             <div style="display:flex;flex-direction:column;gap:0">
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--surface2)"><span style="font-size:.88rem">Pour Complete</span><input type="checkbox" id="togOnPour" style="width:18px;height:18px;accent-color:var(--amber)"></div>
@@ -711,6 +724,8 @@ function loadIntegrations() {
         document.getElementById('togDiscord').checked  = !!cfg.discordEnabled;
         document.getElementById('inpGenericUrl').value = cfg.genericUrl || '';
         document.getElementById('togGeneric').checked  = !!cfg.genericEnabled;
+        document.getElementById('inpSheetsUrl').value  = cfg.sheetsUrl || '';
+        document.getElementById('togSheets').checked   = !!cfg.sheetsEnabled;
         document.getElementById('togOnPour').checked   = !!cfg.onPour;
         document.getElementById('togOnLow').checked    = cfg.onLowKeg !== false;
         document.getElementById('togOnEmpty').checked  = cfg.onEmpty  !== false;
@@ -730,6 +745,8 @@ function saveIntegrations() {
             discordEnabled: document.getElementById('togDiscord').checked,
             genericUrl:     document.getElementById('inpGenericUrl').value,
             genericEnabled: document.getElementById('togGeneric').checked,
+            sheetsUrl:      document.getElementById('inpSheetsUrl').value,
+            sheetsEnabled:  document.getElementById('togSheets').checked,
         })
     }).then(() => toast('Integration settings saved'));
 }
@@ -756,6 +773,11 @@ function testSlack() {
 function testDiscord() {
     post('/api/notifications/test/discord', '').then(r => r.json())
         .then(d => toast(d.success ? '✓ Discord test sent!' : 'Discord test failed — check URL'));
+}
+
+function testSheets() {
+    post('/api/notifications/test/sheets', '').then(r => r.json())
+        .then(d => toast(d.success ? '✓ Test row sent to Sheet!' : ('Sheets test failed: ' + (d.detail || 'unknown error'))));
 }
 
 // ----------------------------------------------------------------
@@ -1170,7 +1192,14 @@ void setupWiFi() {
     ip.fromString(STATIC_IP);
     gw.fromString(GATEWAY);
     sn.fromString(SUBNET);
-    if (!WiFi.config(ip, gw, sn)) {
+    // Explicit public DNS — with a static IP and no DNS server specified,
+    // the ESP32 core silently falls back to using the gateway for DNS,
+    // which fails outbound internet lookups (Sheets/Slack/Discord/webhooks)
+    // on routers that don't proxy DNS at their gateway address, even though
+    // LAN-local traffic (MQTT by IP, the web UI) keeps working fine.
+    IPAddress dns1(8, 8, 8, 8);
+    IPAddress dns2(1, 1, 1, 1);
+    if (!WiFi.config(ip, gw, sn, dns1, dns2)) {
         LOG_E("Static IP config failed");
     }
     #endif
@@ -1498,6 +1527,9 @@ void handleWebClient(WiFiClient& client) {
         deserializeJson(doc, tm.getTapStatusJSON()); // reuse existing builder
         doc["mqtt_connected"] = g_mqtt.connected();
         doc["mqtt_server"]    = MQTT_SERVER;
+        doc["freeHeap"]       = ESP.getFreeHeap();
+        doc["minFreeHeap"]    = ESP.getMinFreeHeap();
+        doc["largestFreeBlock"] = ESP.getMaxAllocHeap();
         // Enrich each tap with live diagnostics
         JsonArray taps = doc["taps"].as<JsonArray>();
         for (int i = 0; i < NUM_TAPS && i < (int)taps.size(); i++) {
@@ -1615,6 +1647,15 @@ void handleWebClient(WiFiClient& client) {
         bool ok = NotificationManager::getInstance().testDiscord();
         sendJsonResponse(client, ok ? "{\"success\":true}" : "{\"success\":false,\"error\":\"Check Discord URL\"}");
     }
+    // ---- POST /api/notifications/test/sheets ----
+    else if (request.startsWith("POST /api/notifications/test/sheets")) {
+        bool ok = NotificationManager::getInstance().testSheets();
+        DynamicJsonDocument d(384);
+        d["success"] = ok;
+        d["detail"]  = NotificationManager::getInstance().getLastSheetsStatus();
+        String out; serializeJson(d, out);
+        sendJsonResponse(client, out, ok ? 200 : 400);
+    }
     // ---- GET /api/files ----
     else if (request.startsWith("GET /api/files")) {
         sendJsonResponse(client, SDManager::getInstance().listFilesJSON());
@@ -1717,6 +1758,10 @@ void onPourComplete_hooks(int tapIndex) {
         tapIndex, st.lastPour.ounces, st.lastPour.duration, st.lastPour.peakFlowRate);
 
     NotificationManager::getInstance().notifyPour(
+        tapIndex, st.lastPour.ounces, st.lastPour.duration,
+        st.lastPour.peakFlowRate, cfg.beerName);
+
+    NotificationManager::getInstance().logPourToSheets(
         tapIndex, st.lastPour.ounces, st.lastPour.duration,
         st.lastPour.peakFlowRate, cfg.beerName);
 

@@ -31,6 +31,10 @@ struct NotificationConfig {
     String genericWebhookUrl;
     bool   genericEnabled = false;
 
+    // Google Sheets (Apps Script Web App URL) — logs pour + keg data on every pour
+    String sheetsWebAppUrl;
+    bool   sheetsEnabled = false;
+
     // Per-event toggles (bitfield)
     bool notifyOnPour       = false; // noisy — off by default
     bool notifyOnLowKeg     = true;
@@ -53,6 +57,11 @@ public:
 
     // Send notifications for events
     void notifyPour(int tapIndex, float ounces, float duration, float peakFlow, const String& beerName);
+
+    // Logs full pour + keg data to a Google Sheets Apps Script Web App.
+    // Unlike notifyPour(), this runs on every real pour regardless of
+    // minPourOzToNotify — it's a permanent log, not a noisy alert.
+    bool logPourToSheets(int tapIndex, float ounces, float duration, float peakFlow, const String& beerName);
     void notifyLowKeg(int tapIndex, float levelOz, float capacityOz);
     void notifyKegEmpty(int tapIndex, const String& beerName);
     void notifyKegReset(int tapIndex, const String& beerName);
@@ -69,6 +78,8 @@ public:
     // Test
     bool testSlack();
     bool testDiscord();
+    bool testSheets();
+    String getLastSheetsStatus() const { return m_lastSheetsStatus; }
 
 private:
     NotificationManager() = default;
@@ -76,12 +87,14 @@ private:
     bool postSlack(const String& message, const String& color = "#ff6b35");
     bool postDiscord(const String& message, const String& title = "Beer Flow Monitor");
     bool postGenericWebhook(const JsonDocument& payload);
+    bool postSheets(const JsonDocument& payload);
 
     String buildPourMessage(int tapIndex, float ounces, float duration,
                             float peakFlow, const String& beerName);
     String buildLowKegMessage(int tapIndex, float levelOz, float capacityOz);
 
     NotificationConfig m_config;
+    String m_lastSheetsStatus;
 };
 
 #endif // NOTIFICATION_MANAGER_H

@@ -41,6 +41,33 @@ void NotificationManager::notifyPour(int tapIndex, float ounces, float duration,
     }
 }
 
+bool NotificationManager::logPourToSheets(int tapIndex, float ounces, float duration,
+                                           float peakFlow, const String& beerName) {
+    if (!m_config.sheetsEnabled) return false;
+
+    TapConfig cfg = TapManager::getInstance().getConfig(tapIndex);
+    TapState  st  = TapManager::getInstance().getState(tapIndex);
+    float pct = (cfg.kegSize > 0) ? (st.currentKegLevel / cfg.kegSize * 100.0f) : 0;
+
+    DynamicJsonDocument doc(384);
+    doc["tap"]         = tapIndex + 1;
+    doc["tapName"]     = cfg.tapName;
+    doc["beer"]        = beerName;
+    doc["abv"]         = cfg.abv;
+    doc["ibu"]         = cfg.ibu;
+    doc["ounces"]      = ounces;
+    doc["duration"]    = duration;
+    doc["peakFlow"]    = peakFlow;
+    doc["kegLevel"]    = st.currentKegLevel;
+    doc["kegLevelGal"] = st.currentKegLevel / 128.0f;
+    doc["kegCapacity"] = cfg.kegSize;
+    doc["kegPct"]      = pct;
+    doc["dateTime"]    = st.lastPour.dateTime;
+    doc["timestamp"]   = st.lastPour.timestamp;
+
+    return postSheets(doc);
+}
+
 void NotificationManager::notifyLowKeg(int tapIndex, float levelOz, float capacityOz) {
     if (!m_config.notifyOnLowKeg) return;
 
@@ -214,6 +241,38 @@ bool NotificationManager::postGenericWebhook(const JsonDocument& payload) {
     return false;
 }
 
+bool NotificationManager::postSheets(const JsonDocument& payload) {
+    if (m_config.sheetsWebAppUrl.isEmpty()) {
+        m_lastSheetsStatus = "No Web App URL configured";
+        return false;
+    }
+    if (WiFi.status() != WL_CONNECTED) {
+        m_lastSheetsStatus = "WiFi not connected";
+        return false;
+    }
+
+    String body; serializeJson(payload, body);
+
+    HTTPClient http;
+    http.begin(m_config.sheetsWebAppUrl);
+    http.addHeader("Content-Type", "application/json");
+    int code = http.POST(body);
+    String resp = (code > 0) ? http.getString() : http.errorToString(code);
+    http.end();
+
+    // Apps Script Web Apps run doPost() to completion *before* replying with
+    // a 302 redirect to the actual response body — the row is already
+    // appended even if we don't follow that redirect, so treat 3xx as success too.
+    if (code > 0 && code < 400) {
+        m_lastSheetsStatus = "HTTP " + String(code);
+        LOG_D("Sheets log OK: %d", code);
+        return true;
+    }
+    m_lastSheetsStatus = "HTTP " + String(code) + ": " + resp;
+    LOG_W("Sheets log failed: %d (%s)", code, resp.c_str());
+    return false;
+}
+
 // ============================================================
 // Test helpers
 // ============================================================
@@ -223,6 +282,26 @@ bool NotificationManager::testSlack() {
 
 bool NotificationManager::testDiscord() {
     return postDiscord("🧪 Test message from Beer Flow Monitor. Discord is connected!", "🧪 Test");
+}
+
+bool NotificationManager::testSheets() {
+    DynamicJsonDocument doc(256);
+    doc["tap"]         = 0;
+    doc["tapName"]     = "Test";
+    doc["beer"]        = "Test Pour";
+    doc["abv"]         = 0;
+    doc["ibu"]         = 0;
+    doc["ounces"]      = 0;
+    doc["duration"]    = 0;
+    doc["peakFlow"]    = 0;
+    doc["kegLevel"]    = 0;
+    doc["kegLevelGal"] = 0;
+    doc["kegCapacity"] = 0;
+    doc["kegPct"]      = 0;
+    doc["dateTime"]    = "TEST";
+    doc["timestamp"]   = 0;
+    doc["test"]        = true;
+    return postSheets(doc);
 }
 
 // ============================================================
@@ -237,6 +316,8 @@ void NotificationManager::saveConfig() {
     prefs.putBool("discord_en",     m_config.discordEnabled);
     prefs.putString("generic_url",  m_config.genericWebhookUrl);
     prefs.putBool("generic_en",     m_config.genericEnabled);
+    prefs.putString("sheets_url",   m_config.sheetsWebAppUrl);
+    prefs.putBool("sheets_en",      m_config.sheetsEnabled);
     prefs.putBool("on_pour",        m_config.notifyOnPour);
     prefs.putBool("on_low",         m_config.notifyOnLowKeg);
     prefs.putBool("on_empty",       m_config.notifyOnEmpty);
@@ -255,6 +336,8 @@ void NotificationManager::loadConfig() {
     m_config.discordEnabled     = prefs.getBool("discord_en",    false);
     m_config.genericWebhookUrl  = prefs.getString("generic_url", "");
     m_config.genericEnabled     = prefs.getBool("generic_en",    false);
+    m_config.sheetsWebAppUrl    = prefs.getString("sheets_url",  "");
+    m_config.sheetsEnabled      = prefs.getBool("sheets_en",     false);
     m_config.notifyOnPour       = prefs.getBool("on_pour",       false);
     m_config.notifyOnLowKeg     = prefs.getBool("on_low",        true);
     m_config.notifyOnEmpty      = prefs.getBool("on_empty",      true);
@@ -265,13 +348,15 @@ void NotificationManager::loadConfig() {
 }
 
 String NotificationManager::getConfigJSON() const {
-    DynamicJsonDocument doc(512);
+    DynamicJsonDocument doc(768);
     doc["slackUrl"]         = m_config.slackWebhookUrl;
     doc["slackEnabled"]     = m_config.slackEnabled;
     doc["discordUrl"]       = m_config.discordWebhookUrl;
     doc["discordEnabled"]   = m_config.discordEnabled;
     doc["genericUrl"]       = m_config.genericWebhookUrl;
     doc["genericEnabled"]   = m_config.genericEnabled;
+    doc["sheetsUrl"]        = m_config.sheetsWebAppUrl;
+    doc["sheetsEnabled"]    = m_config.sheetsEnabled;
     doc["onPour"]           = m_config.notifyOnPour;
     doc["onLowKeg"]         = m_config.notifyOnLowKeg;
     doc["onEmpty"]          = m_config.notifyOnEmpty;
@@ -283,7 +368,7 @@ String NotificationManager::getConfigJSON() const {
 }
 
 bool NotificationManager::updateFromJSON(const String& json) {
-    DynamicJsonDocument doc(512);
+    DynamicJsonDocument doc(768);
     if (deserializeJson(doc, json)) return false;
     if (doc.containsKey("slackUrl"))       m_config.slackWebhookUrl   = doc["slackUrl"].as<String>();
     if (doc.containsKey("slackEnabled"))   m_config.slackEnabled      = doc["slackEnabled"];
@@ -291,6 +376,8 @@ bool NotificationManager::updateFromJSON(const String& json) {
     if (doc.containsKey("discordEnabled")) m_config.discordEnabled    = doc["discordEnabled"];
     if (doc.containsKey("genericUrl"))     m_config.genericWebhookUrl = doc["genericUrl"].as<String>();
     if (doc.containsKey("genericEnabled")) m_config.genericEnabled    = doc["genericEnabled"];
+    if (doc.containsKey("sheetsUrl"))      m_config.sheetsWebAppUrl   = doc["sheetsUrl"].as<String>();
+    if (doc.containsKey("sheetsEnabled"))  m_config.sheetsEnabled     = doc["sheetsEnabled"];
     if (doc.containsKey("onPour"))         m_config.notifyOnPour      = doc["onPour"];
     if (doc.containsKey("onLowKeg"))       m_config.notifyOnLowKeg    = doc["onLowKeg"];
     if (doc.containsKey("onEmpty"))        m_config.notifyOnEmpty     = doc["onEmpty"];

@@ -112,9 +112,11 @@ private:
     void drawTapPourComplete(int tap);
     void drawSplash(int tap);
 
-    void     drawKegArc(LGFX_Sprite& spr, int cx, int cy, int r, float pct);
+    void     drawRadialGauge(LGFX_TFT& d, int cx, int cy, int rOuter, int rInner, float pct, uint16_t fillColor, uint16_t trackColor);
+    void     drawGlassPanel(LGFX_TFT& d, int x, int y, int w, int h, int radius);
     uint16_t levelColor(LGFX_TFT& d, float pct);
     uint16_t amberColor(LGFX_TFT& d);
+    uint16_t hexToColor(LGFX_TFT& d, const String& hex);
 
     int dispW(int tap) const { return DISPLAY_W; }
     int dispH(int tap) const { return DISPLAY_H; }
